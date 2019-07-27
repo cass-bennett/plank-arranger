@@ -8,5 +8,4 @@ edition = "2018"
 
 [dependencies]
 bit-vec = "0.6"
-ordered-float = "1.0"
 priority-queue = "0.6"
