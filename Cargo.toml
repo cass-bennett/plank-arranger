@@ -1,0 +1,12 @@
+[package]
+name = "plank-arranger"
+version = "0.1.0"
+authors = ["cass-bennett <cassandra.bennett413@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+bit-vec = "0.6"
+ordered-float = "1.0"
+priority-queue = "0.6"
