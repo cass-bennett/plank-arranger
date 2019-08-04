@@ -1,39 +1,152 @@
-extern crate bit_vec;
-use bit_vec::BitVec;
-
+use bitvec::prelude::*;
+use ordered_float::NotNan;
 use priority_queue::PriorityQueue;
 use std::cmp::Reverse;
+use std::env;
 use std::fs::File;
 use std::io;
 use std::io::Read;
 use std::io::Write;
 
 fn main() {
+    let args: Vec<String> = env::args().collect();
+    let file_name = if args.get(1).is_some() {
+        args.get(1).unwrap().clone()
+    } else { get_file_name() };
+    let (max_p_len, pieces) = get_pieces(&file_name);
+    let soln = find_solution(max_p_len, &pieces);
+    println!("\nSolution for the pieces found in file: {}",file_name);
+    for i in 0..soln.len() {
+        print!("Plank {}:  ",(i+1));
+        let p = &soln[i];
+        for j in 0..p.len()-1 {
+            print!("{}, ",*p[j]);
+        }
+        print!("{}\n",p.last().unwrap());
+    }
+    println!("");
 }
 
-#[allow(dead_code)]
-pub struct PlankArrangement<'a> {
-    planks: Vec<Plank<'a>>,
-    pieces: Vec<u32>,
-    max_len: u32,
+/// Prompts the user for a file name and returns the user's input
+fn get_file_name() -> String {
+    print!("Input file: ");
+    io::stdout().flush().unwrap();
+    let mut file_name = String::new();
+    io::stdin().read_line(&mut file_name).unwrap();
+    // remove trailing newline
+    file_name.pop();
+    file_name
+}
+
+/// Tries to arrange the elements of `pieces` into the smallest number of
+/// `Vec`s possible, such that each `Vec` has a sum that's less than
+/// or equal to `max_p_len`.
+/// This function assumes that `pieces` will be sorted from smallest
+/// to biggest.
+fn find_solution(max_p_len: f64, pieces:&Vec<f64>) -> Vec<Vec<&f64>> {
+    let mut planks: Vec<Plank> = Vec::new();
+    planks.push(Plank::new( initial_num_pieces(&max_p_len,&pieces),
+                            &bitvec![0;pieces.len()],
+                            pieces));
+    let mut rem_pieces = pieces.len() - planks.last().unwrap().num_pieces;
+    let mut num_planks = (pieces.len() - 1) / (pieces.len() - rem_pieces) + 1;
+    while ! (planks.len() == num_planks
+             && planks.last().unwrap().small_enough(&max_p_len))
+    {
+        let mut curr_plank = planks.pop().unwrap();
+
+        // if current plank is good, make the next one
+        if curr_plank.small_enough(&max_p_len) {
+            planks.push(curr_plank);
+            // if this is the last plank, use all remaining pieces;
+            // otherwise use the same number as the previous plank
+            let new_num_pieces = if planks.len() == num_planks - 1 {
+                rem_pieces } else { planks.last().unwrap().num_pieces };
+            planks.push(Plank::new(new_num_pieces,
+                                   &planks.last().unwrap().state_bv,
+                                   pieces));
+            rem_pieces -= planks.last().unwrap().num_pieces;
+        } // if you can decrease # of pieces w/o increasing total # of planks
+        else if (num_planks - planks.len()) * (curr_plank.num_pieces - 1)
+            >= rem_pieces + curr_plank.num_pieces
+        {
+            curr_plank.set_num_pieces(curr_plank.num_pieces - 1);
+            planks.push(curr_plank);
+            rem_pieces += 1;
+        } // if we have to get rid of the plank that was on top of the stack
+        else {
+            if ! planks.is_empty() {
+                rem_pieces += curr_plank.num_pieces;
+                curr_plank = planks.pop().unwrap();
+                while ! curr_plank.has_next() && ! planks.is_empty() {
+                    rem_pieces += curr_plank.num_pieces;
+                    curr_plank = planks.pop().unwrap();
+                }
+            }
+            if curr_plank.has_next() && curr_plank.small_enough(&max_p_len) {
+                curr_plank.next();
+                planks.push(curr_plank);
+            } // if curr_plank is the last plank on the stack
+            else {
+                rem_pieces += 1;
+                curr_plank.set_num_pieces(curr_plank.num_pieces-1);
+                num_planks = (pieces.len() - 1) / (pieces.len() - rem_pieces) + 1;
+                planks.push(curr_plank);
+            }
+        }
+    }
+    planks_to_vecs(planks)
+}
+
+/// Tries to find a value n such that the first n elements of `pieces`
+/// have a sum less than or equal to `max_len`, but the first n+1 elements
+/// have a sume greater than `max_len`.
+fn initial_num_pieces(max_len: &f64, pieces: &Vec<f64>) -> usize {
+    let mut total = 0.0;
+    let mut count = 0;
+    for p in pieces {
+        total += *p;
+        if total - *max_len < 0.00000001 {
+            count += 1;
+        } else {
+            break;
+        }
+    }
+    count
+}
+
+/// Converts a set of `Plank`s into just the lengths of pieces on that `Plank`
+fn planks_to_vecs(planks: Vec<Plank>) -> Vec<Vec<&f64>> {
+    let mut ret = Vec::new();
+    let mut prev_bv:BitVec = bitvec![0;planks.get(0).unwrap().all_pieces.len()];
+    for p in planks {
+        let curr_bv = p.state_bv.clone() ^ prev_bv;
+        prev_bv = p.state_bv;
+        let v = p.all_pieces.iter()
+            .zip(curr_bv.iter())
+            .filter_map(|(a,b)| if b { Some(a) } else { None })
+            .collect::<Vec<_>>();
+        ret.push(v);
+    }
+    ret
 }
 
 pub struct Plank<'a> {
-    all_pieces: &'a Vec<u32>,
+    all_pieces: &'a Vec<f64>,
     usable_pieces: Vec<usize>,
     num_pieces: usize,
-    total_len: u32,
+    total_len: f64,
     state_bv: BitVec,
-    bit_queue: PriorityQueue<(BitVec,usize),Reverse<u32>>,
+    bit_queue: PriorityQueue<BitVec,Reverse<NotNan<f64>>>,
 }
 
 impl<'a> Plank<'a> {
-    pub fn new(n_p: usize,
+    pub fn new(num_pieces: usize,
                prev_bits: &BitVec,
-               pcs: &'a Vec<u32>, ) -> Plank<'a> {
+               pieces: &'a Vec<f64>, ) -> Plank<'a> {
         let mut available_pieces = Vec::new();
         let mut i = 0;
-        while i < pcs.len() {
+        while i < pieces.len() {
             if prev_bits.get(i) == Some(false) {
                 available_pieces.push(i);
             }
@@ -41,44 +154,103 @@ impl<'a> Plank<'a> {
         }
         available_pieces.shrink_to_fit();
         let mut ret = Plank {
-            all_pieces: pcs,
+            all_pieces: pieces,
             usable_pieces: available_pieces,
             num_pieces: 0,
-            total_len: 0,
+            total_len: 0.0,
             state_bv: prev_bits.clone(),
             bit_queue: PriorityQueue::new(),
         };
-        ret.set_num_pieces(n_p);
+        ret.set_num_pieces(num_pieces);
         return ret;
     }
-    fn set_num_pieces(&mut self, n_p: usize) {
-        self.num_pieces = n_p;
-        self.total_len = 0;
+
+    /// Finds whether the sum of pieces on this plank is less than or
+    /// equal to `max_len`
+    fn small_enough(&self, max_len:&f64) -> bool {
+        self.total_len - *max_len < 0.000000000001
+    }
+
+    /// Fills the `Plank` with the specified number of pieces, skipping
+    /// over any pieces that are shown as being in use by `self.state_bv`
+    fn set_num_pieces(&mut self, num_pieces: usize) {
+        self.num_pieces = num_pieces;
+        self.total_len = 0.0;
         self.bit_queue = PriorityQueue::new();
 
-        for i in 0..self.num_pieces {
+        // variables to find the leftmost and rightmost pieces whose lengths
+        // equal that of the biggest piece we're adding
+        let mut first_same = self.num_pieces - 1;
+        let mut last_same = self.num_pieces - 1;
+        while first_same > 0
+            && self.nth_pieces_equal( &first_same, &(first_same-1) ) {
+            first_same -= 1;
+        }
+        while self.nth_pieces_equal( &last_same, &(last_same+1) ) {
+            last_same += 1;
+        }
+        let mid_same = last_same - (self.num_pieces - 1 - first_same);
+
+        for i in 0..first_same {
             let index = self.usable_pieces.get(i).unwrap();
             self.total_len += *self.all_pieces.get(*index).unwrap();
             self.state_bv.set(*index,true);
         }
-        for i in self.num_pieces..self.usable_pieces.len() {
+        for i in first_same..mid_same {
             let index = self.usable_pieces.get(i).unwrap();
             self.state_bv.set(*index,false);
         }
-        if self.num_pieces > 0
-            && self.num_pieces + 1 < self.usable_pieces.len()
+        for i in mid_same..last_same + 1 {
+            let index = self.usable_pieces.get(i).unwrap();
+            self.total_len += *self.all_pieces.get(*index).unwrap();
+            self.state_bv.set(*index,true);
+        }
+        for i in last_same + 1..self.usable_pieces.len() {
+            let index = self.usable_pieces.get(i).unwrap();
+            self.state_bv.set(*index,false);
+        }
+
+        if last_same < self.usable_pieces.len() - 1 {
+            self.push_to_queue( &last_same );
+        }
+        if first_same > 0
+            && ! self.nth_bit_is_true(&first_same)
+            && self.nth_bit_is_true(&(first_same-1))
         {
-            self.push_to_queue( &(self.num_pieces-1) );
+            self.push_to_queue( &(first_same-1) );
         }
     }
+
+    /// Finds what state the plank would be in if the `index`th usable
+    /// piece were taken off the plank, and the `index+1`th usable piece
+    /// were put on the plank, and adds that new state to the queue.
     fn push_to_queue(&mut self, index: &usize) {
-        let bit_index = self.usable_pieces.get(*index).unwrap();
-        let dest_index = self.usable_pieces.get(*index+1).unwrap();
-        let future_len =
-            self.total_len
-            + (*self.all_pieces.get(*dest_index).unwrap()
-               - *self.all_pieces.get(*bit_index).unwrap());
-        self.bit_queue.push((self.state_bv.clone(),*index),Reverse(future_len));
+        let mut new_bv = self.state_bv.clone();
+        let mut remove_index = *index;
+        let mut add_index = *index + 1;
+
+        // find the leftmost piece ON the plank that equals the one we want
+        // removed
+        while remove_index > 0
+            && self.nth_pieces_equal( &remove_index , &(remove_index-1) )
+            && self.nth_bit_is_true( &(remove_index-1) )
+        {
+            remove_index -= 1;
+        }
+        // find the rightmost piece NOT on the plank that equals the one we
+        // want added
+        while add_index < self.usable_pieces.len() - 1
+            && self.nth_pieces_equal( &add_index , &(add_index+1) )
+            && ! self.nth_bit_is_true( &(add_index+1) )
+        {
+            add_index += 1;
+        }
+
+        new_bv.set(*self.usable_pieces.get(remove_index).unwrap(),false);
+        new_bv.set(*self.usable_pieces.get(add_index).unwrap(),true);
+        let new_total = self.total_len
+            + self.nth_pieces_diff(&add_index,&remove_index).unwrap();
+        self.bit_queue.push(new_bv,Reverse(NotNan::new(new_total).unwrap()));
     }
     pub fn has_next(&self) -> bool {
         !self.bit_queue.is_empty()
@@ -86,15 +258,17 @@ impl<'a> Plank<'a> {
     fn nth_bit_is_true(&self, index:&usize) -> bool {
         self.state_bv[*self.usable_pieces.get(*index).unwrap()]
     }
-    #[allow(dead_code)]
     fn nth_pieces_equal(&self, i_1:&usize, i_2:&usize) -> bool {
-        match self.nth_pieces_diff(i_1,i_2) {
-            Some(a) => a == 0,
-            None    => false
+        let val_1 = self.usable_pieces.get(*i_1)
+            .and_then(|x| self.all_pieces.get(*x));
+        let val_2 = self.usable_pieces.get(*i_2)
+            .and_then(|x| self.all_pieces.get(*x));
+        match (val_1,val_2) {
+            (Some(a),Some(b)) => *a == *b,
+                            _ => false
         }
     }
-    #[allow(dead_code)]
-    fn nth_pieces_diff(&self, i_1:&usize, i_2:&usize) -> Option<u32> {
+    fn nth_pieces_diff(&self, i_1:&usize, i_2:&usize) -> Option<f64> {
         let val_1 = self.usable_pieces.get(*i_1)
             .and_then(|x| self.all_pieces.get(*x));
         let val_2 = self.usable_pieces.get(*i_2)
@@ -105,18 +279,13 @@ impl<'a> Plank<'a> {
         }
     }
     fn next(&mut self) {
-        let ((bv,index),wrapped_len) = self.bit_queue.pop().unwrap();
+        let (bv,wrapped_len) = self.bit_queue.pop().unwrap();
         self.total_len = match wrapped_len {
-            Reverse(a) => a
+            Reverse(a) => a.into_inner()
         };
         self.state_bv = bv;
 
-        self.state_bv.set(*self.usable_pieces.get(index).unwrap(),false);
-        self.state_bv.set(*self.usable_pieces.get(index+1).unwrap(),true);
-
-        let queue_add_start = if index > 0 { index - 1 } else { 0 };
-
-        for i in queue_add_start..self.usable_pieces.len()-1 {
+        for i in 0..self.usable_pieces.len() - 1 {
             if self.nth_bit_is_true( &i )
                 && ! self.nth_bit_is_true( &(i+1) )
             {
@@ -126,29 +295,19 @@ impl<'a> Plank<'a> {
     }
 }
 
-#[allow(dead_code)]
-fn get_pieces() -> (u32,Vec<u32>) {
-    // get filename from the user
-    print!("input file: ");
-    io::stdout().flush().unwrap();
-    let mut file_name = String::new();
-    io::stdin().read_line(&mut file_name).unwrap();
-    // remove trailing newline
-    file_name.pop();
-
+/// Reads the pieces from the specified file
+fn get_pieces(file_name:&String) -> (f64,Vec<f64>) {
     // read contents of the file to a vector of floats
-    let mut file = File::open(&file_name).expect("Couldn't open the file");
+    let mut file = File::open(file_name).expect("Couldn't open the file");
     let mut contents = String::new();
     file.read_to_string(&mut contents).expect("Couldn't read the file");
-    let mut v: Vec<u32> = contents.split_whitespace()
+    let mut v: Vec<f64> = contents.split_whitespace()
         .filter_map(|s| s.parse::<f64>().ok())
-        .map(|f| (f * 10000.0 + 0.5) as u32)
         .collect::<Vec<_>>();
-    
     // take the first number in the file as the plank length
     let plank_len = v.remove(0);
     // sort the numbers from low to high
-    v.sort();
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
     v.shrink_to_fit();
 
     return (plank_len,v);
@@ -157,29 +316,44 @@ fn get_pieces() -> (u32,Vec<u32>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_plank_initializer() {
-        let pieces = vec![1, 2, 3, 4, 5];
-        let mut p = Plank::new(2,&BitVec::from_bytes(&[0x00]),&pieces);
-        assert_eq!(p.state_bv,BitVec::from_bytes(&[0xc0]));
-        assert_eq!(p.total_len, 3);
-        
-        p = Plank::new(3,&BitVec::from_bytes(&[0x50]),&pieces);
-        assert_eq!(p.state_bv,BitVec::from_bytes(&[0xf8]));
-        assert_eq!(p.total_len, 9);
+        let pieces = vec![1.0, 2.0, 3.0, 4.0, 5.0];
+        let mut p = Plank::new(2,&bitvec![0;5],&pieces);
+        assert_eq!(p.state_bv,bitvec![1,1,0,0,0]);
+        assert_eq!(p.total_len, 3.0);
+
+        p = Plank::new(3,&bitvec![0,1,0,1,0],&pieces);
+        assert_eq!(p.state_bv,bitvec![1,1,1,1,1]);
+        assert_eq!(p.total_len, 9.0);
 
         p.set_num_pieces(2);
-        assert_eq!(p.state_bv,BitVec::from_bytes(&[0xf0]));
-        assert_eq!(p.total_len, 4);
+        assert_eq!(p.state_bv,bitvec![1,1,1,1,0]);
+        assert_eq!(p.total_len, 4.0);
     }
 
     #[test]
-    fn test_next_function() {
-        let pieces = vec![ 1, 3, 6, 7,  8,10,15,17, 20];
-        //  [0x45,0x0] =   0  1  0  0 | 0  1  0  1 | 0
-        let mut p = Plank::new(3,&BitVec::from_bytes(&[0x45,0x0]),&pieces);
-        let mut old_len = 0;
+    fn test_next_fn_all_unique() {
+        let pieces = vec![ 1.0, 3.0, 6.0, 7.0, 8.0,10.0,15.0,17.0,20.0];
+        let mut p = Plank::new(3,&bitvec![0,1,0,0,0,1,0,1,0],&pieces);
+
+        // 6 choose 3 = 20
+        run_through_arrangements(&mut p,20);
+    }
+    #[test]
+    fn test_next_some_repeats() {
+        let pieces = vec![ 1.0, 1.0, 1.0, 1.0, 2.0, 2.0, 2.0, 2.0,
+                           3.0, 3.0, 3.0, 3.0, 4.0, 4.0, 4.0, 4.0 ];
+        let mut p = Plank::new(4,&bitvec![0,0,0,0, 0,0,1,1, 0,0,1,1, 0,0,0,0],
+                               &pieces);
+        run_through_arrangements(&mut p,27);
+        p = Plank::new(4,&bitvec![0,0,1,1, 0,0,0,0, 0,0,0,0, 0,0,1,1],&pieces);
+        run_through_arrangements(&mut p,27);
+    }
+
+    fn run_through_arrangements(p: &mut Plank, expected_count: usize) {
+        let mut old_len = 0.0;
         let mut curr_len = p.total_len;
         let mut counter = 1;
         while p.has_next() {
@@ -189,7 +363,20 @@ mod tests {
             curr_len = p.total_len;
             counter += 1;
         }
-        // 6 choose 3 = 20
-        assert_eq!(counter,20);
+        assert_eq!(counter,expected_count);
+    }
+    #[test]
+    fn test_soln_1() {
+        let pieces = vec![ 0.2, 0.3, 0.45, 0.45, 0.45, 0.7, 0.85, 1.1, 1.5 ];
+        let max_len = 2.0;
+        let soln = find_solution( max_len, &pieces );
+        for a in soln {
+            let b = vec![ vec![ 0.2, 0.3, 1.5 ],
+                          vec![ 0.45, 0.45, 1.1 ],
+                          vec![ 0.45, 0.7, 0.85 ] ];
+            assert!(b.iter().map(|c| c.iter().zip(a.iter())
+                                 .fold(true, |x,(y,z)| x && (y == *z)))
+                    .fold(false, |x,y| x||y));
+        }
     }
 }
