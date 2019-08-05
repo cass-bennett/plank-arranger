@@ -1,4 +1,4 @@
-#Plank Arranger
+# Plank Arranger
 This program aims to solve the following problem:<br/>
 A company buys planks of wood that come in a constant length, and cuts them
 down into pieces.
@@ -6,7 +6,7 @@ If somebody at the company knows the lengths of all the pieces they'll
 need, then what's the smallest number of planks they can use to make all
 the pieces?
 
-#The Algorithm
+# The Algorithm
 The program starts by sorting all the piece lengths from smallest to biggest.
 Then it constructs a plank from the smallest n elements, with the highest
 value of n as possible.
@@ -47,7 +47,7 @@ and go to the most recent valid plank.
 the current total number of planks, so we'll have to decrease the number of
 pieces on this plank and also increase the total number of planks.
 
-##Finding the Next-Smallest Plank Arrangement
+## Finding the Next-Smallest Plank Arrangement
 Once we have a set of n pieces, we can find the set of n pieces with the
 next-smallest total by looking at the differences between subsequent
 available pieces.
@@ -84,7 +84,7 @@ we'll want to use the latter later on, so we handle this by having a queue
 of [BitVec](https://docs.rs/bitvec/0.14.0/bitvec/vec/struct.BitVec.html)s,
 prioritized by their corresponding totals.
 
-##Accounting for Identical Pieces
+## Accounting for Identical Pieces
 
 In the naïve version of this "next plank" algorithm, having multiple identically
 sized pieces will result in multiple identical plank arrangements.
