@@ -6,7 +6,24 @@ If somebody at the company knows the lengths of all the pieces they'll
 need, then what's the smallest number of planks they can use to make all
 the pieces?
 
-# The Algorithm
+## Getting Started
+To build this on your system, you'll first need to [install Rust and Cargo](https://doc.rust-lang.org/cargo/getting-started/installation.html), and [clone this repository](https://git-scm.com/book/en/v2/Git-Basics-Getting-a-Git-Repository)
+to your local system.
+
+Then you can compile it by going into the `plank-arranger` directory and
+typing ```cargo build --release``` and then running it with
+```./target/release/plank-arranger```
+
+### Parameters
+In order to run, the program needs to know how long the planks are that you'll
+be cutting from, and it needs a file that contains a list of all the piece
+lengths you have to make.
+You can supply these as command-line arguments, like in
+```./target/release/plank-arranger -p [LENGTH] -f [FILENAME]```
+or you can run it without the arguments and the program will prompt you for
+them.
+
+## Explanation of the Algorithm
 The program starts by sorting all the piece lengths from smallest to biggest.
 Then it constructs a plank from the smallest n elements, with the highest
 value of n as possible.
@@ -47,7 +64,7 @@ and go to the most recent valid plank.
 the current total number of planks, so we'll have to decrease the number of
 pieces on this plank and also increase the total number of planks.
 
-## Finding the Next-Smallest Plank Arrangement
+### Finding the Next-Smallest Plank Arrangement
 Once we have a set of n pieces, we can find the set of n pieces with the
 next-smallest total by looking at the differences between subsequent
 available pieces.
@@ -84,7 +101,7 @@ we'll want to use the latter later on, so we handle this by having a queue
 of [BitVec](https://docs.rs/bitvec/0.14.0/bitvec/vec/struct.BitVec.html)s,
 prioritized by their corresponding totals.
 
-## Accounting for Identical Pieces
+### Accounting for Identical Pieces
 
 In the naïve version of this "next plank" algorithm, having multiple identically
 sized pieces will result in multiple identical plank arrangements.

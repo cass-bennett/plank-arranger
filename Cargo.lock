@@ -11,6 +11,14 @@ version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
+name = "getopts"
+version = "0.2.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+dependencies = [
+ "unicode-width 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)",
+]
+
+[[package]]
 name = "indexmap"
 version = "0.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -36,6 +44,7 @@ name = "plank-arranger"
 version = "0.1.0"
 dependencies = [
  "bitvec 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "getopts 0.2.19 (registry+https://github.com/rust-lang/crates.io-index)",
  "ordered-float 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "priority-queue 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -48,10 +57,17 @@ dependencies = [
  "indexmap 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
 
+[[package]]
+name = "unicode-width"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+
 [metadata]
 "checksum autocfg 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)" = "22130e92352b948e7e82a49cdb0aa94f2211761117f29e052dd397c1ac33542b"
 "checksum bitvec 0.13.0 (registry+https://github.com/rust-lang/crates.io-index)" = "b323b81e6ddfedd52b4d40714d841f3015ad8038d660348462bd35c420630598"
+"checksum getopts 0.2.19 (registry+https://github.com/rust-lang/crates.io-index)" = "72327b15c228bfe31f1390f93dd5e9279587f0463836393c9df719ce62a3e450"
 "checksum indexmap 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)" = "7164c96d6e18ccc3ce43f3dedac996c21a220670a106c275b96ad92110401362"
 "checksum num-traits 0.2.8 (registry+https://github.com/rust-lang/crates.io-index)" = "6ba9a427cfca2be13aa6f6403b0b7e7368fe982bfa16fccc450ce74c46cd9b32"
 "checksum ordered-float 1.0.2 (registry+https://github.com/rust-lang/crates.io-index)" = "18869315e81473c951eb56ad5558bbc56978562d3ecfb87abb7a1e944cea4518"
 "checksum priority-queue 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)" = "602c2e38842965277b124586dbc4691d83f37af5b4ecd7c9e46908e1bd7d5b35"
+"checksum unicode-width 0.1.5 (registry+https://github.com/rust-lang/crates.io-index)" = "882386231c45df4700b275c7ff55b6f3698780a650026380e72dabe76fa46526"

@@ -1,4 +1,7 @@
+extern crate getopts;
+
 use bitvec::prelude::*;
+use getopts::Options;
 use ordered_float::NotNan;
 use priority_queue::PriorityQueue;
 use std::cmp::Reverse;
@@ -10,12 +13,13 @@ use std::io::Write;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
-    let file_name = if args.get(1).is_some() {
-        args.get(1).unwrap().clone()
-    } else { get_file_name() };
-    let (max_p_len, pieces) = get_pieces(&file_name);
+    let (max_p_len,file_name) = parse_args(&args[1..]);
+    let pieces = get_pieces(&file_name);
+    if *pieces.last().unwrap() > max_p_len {
+        panic!("One or more of the pieces is too long for the planks.");
+    }
     let soln = find_solution(max_p_len, &pieces);
-    println!("\nSolution for the pieces found in file: {}",file_name);
+    println!("\nSolution for the pieces found in file \"{}\", with plank length of {}:",file_name,max_p_len);
     for i in 0..soln.len() {
         print!("Plank {}:  ",(i+1));
         let p = &soln[i];
@@ -27,15 +31,51 @@ fn main() {
     println!("");
 }
 
-/// Prompts the user for a file name and returns the user's input
-fn get_file_name() -> String {
-    print!("Input file: ");
+/// Reads plank size and name of input file from command-line arguments, if
+/// they're present, or prompts the user to input them otherwise
+fn parse_args(args:&[String]) -> (f64,String) {
+    let mut opts = Options::new();
+    opts.optopt("p","plank-size","length of the planks that the pieces will be cut from","LENGTH");
+    opts.optopt("f","file","file to read piece lengths from","FILE");
+    let matches = match opts.parse(args) {
+        Ok(m) => { m }
+        Err(f) => { panic!(f.to_string()) }
+    };
+    let size_of_plank = match matches.opt_str("p") {
+        Some(s) => s,
+        None => prompt_for_input("Enter the length of the planks: "),
+    }.parse::<f64>().unwrap();
+    let input_file = match matches.opt_str("f") {
+        Some(s) => s,
+        None => prompt_for_input("Enter name of file to read pieces from: "),
+    };
+    (size_of_plank,input_file)
+}
+
+/// Prompts the user for input and returns it
+fn prompt_for_input(s:&'static str) -> String {
+    print!("{}",s);
     io::stdout().flush().unwrap();
-    let mut file_name = String::new();
-    io::stdin().read_line(&mut file_name).unwrap();
+    let mut user_input = String::new();
+    io::stdin().read_line(&mut user_input).unwrap();
     // remove trailing newline
-    file_name.pop();
-    file_name
+    user_input.pop();
+    user_input
+}
+
+/// Reads the pieces from the specified file
+fn get_pieces(file_name:&String) -> Vec<f64> {
+    // read contents of the file to a vector of floats
+    let mut file = File::open(file_name).expect("Couldn't open the file");
+    let mut contents = String::new();
+    file.read_to_string(&mut contents).expect("Couldn't read the file");
+    let mut v: Vec<f64> = contents.split_whitespace()
+        .filter_map(|s| s.parse::<f64>().ok())
+        .collect::<Vec<_>>();
+    // sort the numbers from low to high
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    v.shrink_to_fit();
+    v
 }
 
 /// Tries to arrange the elements of `pieces` into the smallest number of
@@ -45,9 +85,9 @@ fn get_file_name() -> String {
 /// to biggest.
 fn find_solution(max_p_len: f64, pieces:&Vec<f64>) -> Vec<Vec<&f64>> {
     let mut planks: Vec<Plank> = Vec::new();
-    planks.push(Plank::new( initial_num_pieces(&max_p_len,&pieces),
-                            &bitvec![0;pieces.len()],
-                            pieces));
+    planks.push(Plank::new(initial_num_pieces(&max_p_len,&pieces),
+                           &bitvec![0;pieces.len()],
+                           pieces));
     let mut rem_pieces = pieces.len() - planks.last().unwrap().num_pieces;
     let mut num_planks = (pieces.len() - 1) / (pieces.len() - rem_pieces) + 1;
     while ! (planks.len() == num_planks
@@ -143,7 +183,7 @@ pub struct Plank<'a> {
 impl<'a> Plank<'a> {
     pub fn new(num_pieces: usize,
                prev_bits: &BitVec,
-               pieces: &'a Vec<f64>, ) -> Plank<'a> {
+               pieces: &'a Vec<f64>) -> Plank<'a> {
         let mut available_pieces = Vec::new();
         let mut i = 0;
         while i < pieces.len() {
@@ -183,10 +223,10 @@ impl<'a> Plank<'a> {
         let mut first_same = self.num_pieces - 1;
         let mut last_same = self.num_pieces - 1;
         while first_same > 0
-            && self.nth_pieces_equal( &first_same, &(first_same-1) ) {
+            && self.nth_pieces_equal(&first_same, &(first_same-1)) {
             first_same -= 1;
         }
-        while self.nth_pieces_equal( &last_same, &(last_same+1) ) {
+        while self.nth_pieces_equal(&last_same, &(last_same+1)) {
             last_same += 1;
         }
         let mid_same = last_same - (self.num_pieces - 1 - first_same);
@@ -211,13 +251,13 @@ impl<'a> Plank<'a> {
         }
 
         if last_same < self.usable_pieces.len() - 1 {
-            self.push_to_queue( &last_same );
+            self.push_to_queue(&last_same);
         }
         if first_same > 0
             && ! self.nth_bit_is_true(&first_same)
             && self.nth_bit_is_true(&(first_same-1))
         {
-            self.push_to_queue( &(first_same-1) );
+            self.push_to_queue(&(first_same-1));
         }
     }
 
@@ -232,16 +272,16 @@ impl<'a> Plank<'a> {
         // find the leftmost piece ON the plank that equals the one we want
         // removed
         while remove_index > 0
-            && self.nth_pieces_equal( &remove_index , &(remove_index-1) )
-            && self.nth_bit_is_true( &(remove_index-1) )
+            && self.nth_pieces_equal(&remove_index, &(remove_index-1))
+            && self.nth_bit_is_true(&(remove_index-1))
         {
             remove_index -= 1;
         }
         // find the rightmost piece NOT on the plank that equals the one we
         // want added
         while add_index < self.usable_pieces.len() - 1
-            && self.nth_pieces_equal( &add_index , &(add_index+1) )
-            && ! self.nth_bit_is_true( &(add_index+1) )
+            && self.nth_pieces_equal(&add_index , &(add_index+1))
+            && ! self.nth_bit_is_true(&(add_index+1))
         {
             add_index += 1;
         }
@@ -286,31 +326,13 @@ impl<'a> Plank<'a> {
         self.state_bv = bv;
 
         for i in 0..self.usable_pieces.len() - 1 {
-            if self.nth_bit_is_true( &i )
-                && ! self.nth_bit_is_true( &(i+1) )
+            if self.nth_bit_is_true(&i)
+                && ! self.nth_bit_is_true(&(i+1))
             {
-                self.push_to_queue( &i );
+                self.push_to_queue(&i);
             }
         }
     }
-}
-
-/// Reads the pieces from the specified file
-fn get_pieces(file_name:&String) -> (f64,Vec<f64>) {
-    // read contents of the file to a vector of floats
-    let mut file = File::open(file_name).expect("Couldn't open the file");
-    let mut contents = String::new();
-    file.read_to_string(&mut contents).expect("Couldn't read the file");
-    let mut v: Vec<f64> = contents.split_whitespace()
-        .filter_map(|s| s.parse::<f64>().ok())
-        .collect::<Vec<_>>();
-    // take the first number in the file as the plank length
-    let plank_len = v.remove(0);
-    // sort the numbers from low to high
-    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    v.shrink_to_fit();
-
-    return (plank_len,v);
 }
 
 #[cfg(test)]
@@ -369,7 +391,7 @@ mod tests {
     fn test_soln_1() {
         let pieces = vec![ 0.2, 0.3, 0.45, 0.45, 0.45, 0.7, 0.85, 1.1, 1.5 ];
         let max_len = 2.0;
-        let soln = find_solution( max_len, &pieces );
+        let soln = find_solution(max_len, &pieces);
         for a in soln {
             let b = vec![ vec![ 0.2, 0.3, 1.5 ],
                           vec![ 0.45, 0.45, 1.1 ],
